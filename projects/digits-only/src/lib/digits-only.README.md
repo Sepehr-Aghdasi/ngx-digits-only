@@ -69,14 +69,14 @@ digits-only/
 Import `digitsOnlyModule` into your feature module:
 
 ```typescript
-import { digitsOnlyDirective } from 'digits-only.directive';
+import { DigitsOnlyDirective } from 'digits-only.directive';
 
 // In a non-standalone NgModule:
 @NgModule({
   imports: [
     FormsModule,          // if you use ngModel
     ReactiveFormsModule,  // if you use formControlName
-    digitsOnlyDirective,   // add this — declares and exports digitsOnlyDirective
+    DigitsOnlyDirective,   // add this — declares and exports DigitsOnlyDirective
   ],
   declarations: [MyComponent],
 })
@@ -86,14 +86,14 @@ export class MyFeatureModule {}
 Or if your component is standalone, import the module directly:
 
 ```typescript
-import { digitsOnlyDirective } from 'digits-only.directive';
+import { DigitsOnlyDirective } from 'digits-only.directive';
 
 @Component({
   standalone: true,
   imports: [
     FormsModule,
     ReactiveFormsModule,
-    digitsOnlyDirective,  // imports the module which re-exports the directive
+    DigitsOnlyDirective,  // imports the module which re-exports the directive
   ],
 })
 export class MyComponent {}
@@ -840,7 +840,7 @@ A complete working example with every common payment field:
 ```typescript
 @Component({
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, digitsOnlyDirective],
+  imports: [CommonModule, ReactiveFormsModule, DigitsOnlyDirective],
   templateUrl: './payment.component.html',
 })
 export class PaymentComponent implements OnInit {
@@ -1080,12 +1080,12 @@ number silently corrupts the last digits.
 ```typescript
 // WRONG — missing FormsModule
 @Component({
-  imports: [digitsOnlyDirective],
+  imports: [DigitsOnlyDirective],
 })
 
 // CORRECT
 @Component({
-  imports: [FormsModule, digitsOnlyDirective],
+  imports: [FormsModule, DigitsOnlyDirective],
 })
 ```
 

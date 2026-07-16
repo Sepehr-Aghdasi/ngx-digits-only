@@ -33,7 +33,7 @@ import { DigitsOnlyDirective } from 'digits-only';
 @Component({
   selector: 'app-example',
   standalone: true,
-  imports: [ReactiveFormsModule, digitsOnlyDirective],
+  imports: [ReactiveFormsModule, DigitsOnlyDirective],
   template: `
     <input
       digitsOnly

@@ -170,17 +170,17 @@ function isNamedPattern(value: string): value is NamedPattern {
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => digitsOnlyDirective),
+      useExisting: forwardRef(() => DigitsOnlyDirective),
       multi: true,
     },
     {
       provide: NG_VALIDATORS,
-      useExisting: forwardRef(() => digitsOnlyDirective),
+      useExisting: forwardRef(() => DigitsOnlyDirective),
       multi: true,
     },
   ],
 })
-export class digitsOnlyDirective implements ControlValueAccessor, Validator, OnInit, OnChanges {
+export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnInit, OnChanges {
 
   // ─── Public inputs ──────────────────────────────────────────────────────────
 
