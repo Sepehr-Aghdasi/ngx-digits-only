@@ -28,15 +28,15 @@ Import the directive directly into your standalone component:
 ```typescript
 import { Component } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
-import { NgxDigitsOnlyDirective } from 'ngx-digits-only';
+import { DigitsOnlyDirective } from 'digits-only';
 
 @Component({
   selector: 'app-example',
   standalone: true,
-  imports: [ReactiveFormsModule, NgxDigitsOnlyDirective],
+  imports: [ReactiveFormsModule, digitsOnlyDirective],
   template: `
     <input
-      ngxDigitsOnly
+      digitsOnly
       [allowDecimal]="true"
       [decimalPlaces]="2"
       [allowNegative]="false"
@@ -59,7 +59,7 @@ Standalone directives can still be used inside NgModule-based components — jus
 ```typescript
 @Component({
   standalone: true,
-  imports: [NgxDigitsOnlyDirective],
+  imports: [DigitsOnlyDirective],
   ...
 })
 ```

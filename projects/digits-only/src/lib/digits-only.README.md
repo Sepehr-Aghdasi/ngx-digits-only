@@ -59,7 +59,7 @@ Think of it as a lightweight version of `ngx-mask` focused entirely on numbers a
 Copy the files into your project under the molecules folder:
 
 ```
-src/app/mk-molecules/digits-only/
+digits-only/
 ├── digits-only.directive.ts
 ├── digits-only.module.ts
 ├── digits-only.regex.ts
@@ -69,14 +69,14 @@ src/app/mk-molecules/digits-only/
 Import `digitsOnlyModule` into your feature module:
 
 ```typescript
-import { digitsOnlyModule } from 'src/app/mk-molecules/digits-only/digits-only.module';
+import { digitsOnlyDirective } from 'digits-only.directive';
 
 // In a non-standalone NgModule:
 @NgModule({
   imports: [
     FormsModule,          // if you use ngModel
     ReactiveFormsModule,  // if you use formControlName
-    digitsOnlyModule,   // add this — declares and exports digitsOnlyDirective
+    digitsOnlyDirective,   // add this — declares and exports digitsOnlyDirective
   ],
   declarations: [MyComponent],
 })
@@ -86,14 +86,14 @@ export class MyFeatureModule {}
 Or if your component is standalone, import the module directly:
 
 ```typescript
-import { digitsOnlyModule } from 'src/app/mk-molecules/digits-only/digits-only.module';
+import { digitsOnlyDirective } from 'digits-only.directive';
 
 @Component({
   standalone: true,
   imports: [
     FormsModule,
     ReactiveFormsModule,
-    digitsOnlyModule,  // imports the module which re-exports the directive
+    digitsOnlyDirective,  // imports the module which re-exports the directive
   ],
 })
 export class MyComponent {}
@@ -965,7 +965,7 @@ visible in your IDE while accepting any string at runtime.
 ### Using it in your component
 
 ```typescript
-import { NamedPattern } from 'src/app/mk-molecules/digits-only/digits-only.directive';
+import { NamedPattern } from 'digits-only.directive';
 
 export class MyComponent {
   // Typed — autocomplete works, typos caught at compile time
@@ -992,7 +992,7 @@ Angular, React, Vue, Node.js, plain TypeScript — and use it directly.
 Converts all Eastern digits to Western. Returns a string.
 
 ```typescript
-import { convertEasternDigits } from 'src/app/mk-molecules/digits-only/eastern-numerals';
+import { convertEasternDigits } from 'digits-only/eastern-numerals';
 
 convertEasternDigits('١٢٣')          // '123'
 convertEasternDigits('۶۷۸')          // '678'
