@@ -184,8 +184,16 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
 
   // ─── Public inputs ──────────────────────────────────────────────────────────
 
-  /** How many decimal places are allowed. 0 = integers only. Ignored when pattern is set. */
-  @Input() decimalPlaces = 0;
+  /**
+   * How many decimal places are allowed. Ignored when pattern is set.
+   *
+   *   0    (default) — integers only, decimal point blocked
+   *   N              — exactly N decimal places allowed (e.g. 2 for currency)
+   *   null           — unlimited decimal places allowed
+   *
+   * Matches the same null = "no limit" convention used by maxLength, min, and max.
+   */
+  @Input() decimalPlaces: number | null = 0;
 
   /** Visual grouping character inserted between digit groups. Ignored when pattern is set. */
   @Input() thousandSeparator: '' | ',' | '.' | ' ' | '_' = '';
@@ -379,15 +387,6 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
       : this.prefix.length;               // LTR: [prefix][number][suffix]
   }
 
-  /**
-   * The number of characters at the RIGHT end of the display string that
-   * belong to the suffix (LTR) or prefix (RTL) — i.e. characters the cursor
-   * must never move past on the right side.
-   */
-  private get editableEndPadding(): number {
-    return this.isRtl ? this.prefix.length : this.suffix.length;
-  }
-
   constructor(
     private el: ElementRef<HTMLInputElement>,
     private renderer: Renderer2,
@@ -397,7 +396,7 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
   // ─── Angular lifecycle ────────────────────────────────────────────────────────
 
   ngOnInit(): void {
-    // Always use numeric inputMode so mobile keyboards show the number pad
+    // Always use numeric inputmode so mobile keyboards show the number pad
     // regardless of document direction.
     this.renderer.setAttribute(this.el.nativeElement, 'inputmode', 'numeric');
 
@@ -566,7 +565,10 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
 
     // ── Allow decimal point (number mode only, no pattern) ────────────────
     const isDecimalKey = pressedKey === '.' || pressedKey === ',';
-    const decimalIsAllowed = this.decimalPlaces > 0 && !this.hasPattern;
+    // decimalPlaces === 0  → integers only, block the dot
+    // decimalPlaces > 0   → allow up to N decimal places
+    // decimalPlaces null  → allow unlimited decimal places
+    const decimalIsAllowed = this.decimalPlaces !== 0 && !this.hasPattern;
     const noDecimalYet = !this._rawValue.includes('.');
 
     if (isDecimalKey && decimalIsAllowed && noDecimalYet) {
@@ -623,8 +625,6 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
   @HostListener('input')
   onInput(): void {
     const inputEl = this.el.nativeElement;
-    const cursorPositionBeforeReformat = inputEl.selectionStart ?? 0;
-    const displayLengthBeforeReformat = inputEl.value.length;
 
     // Convert Eastern numerals FIRST, before anything else touches the value
     if (this.convertEasternNumerals) {
@@ -649,10 +649,12 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
       raw = raw.replace(',', '.');
 
       if (this.decimalPlaces === 0 || this.effectiveOutputType === 'string') {
-        // Integer or string mode: no decimal points allowed
+        // Integers only or string mode — remove any decimal point
         raw = raw.replace(REGEX.ALL_DOTS, '');
       } else {
-        // Decimal mode: allow exactly one dot with up to N decimal places
+        // Decimal mode (decimalPlaces = N or null):
+        // enforceDecimalRules handles both — when decimalPlaces is null it
+        // only enforces the single-dot rule without truncating decimal digits.
         raw = this.enforceDecimalRules(raw);
       }
 
@@ -665,7 +667,7 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
     }
 
     this._rawValue = raw;
-    this.refreshDisplay(cursorPositionBeforeReformat, displayLengthBeforeReformat);
+    this.refreshDisplay();
     this._onChange(this.buildModelValue());
     this._onValidatorChange();
   }
@@ -719,13 +721,14 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
 
     const inputEl = this.el.nativeElement;
 
-    // Figure out where the cursor/selection is inside the RAW digit string
-    const rawInsertStart = this.hasPattern
-      ? this.mapDisplayCursorToRawIndex(inputEl.selectionStart ?? 0)
-      : (inputEl.selectionStart ?? 0);
-    const rawInsertEnd = this.hasPattern
-      ? this.mapDisplayCursorToRawIndex(inputEl.selectionEnd ?? 0)
-      : (inputEl.selectionEnd ?? 0);
+    // Figure out where the cursor/selection is inside the RAW digit string.
+    //
+    // In both pattern and non-pattern mode we go through mapDisplayCursorToRawIndex
+    // which now correctly subtracts editableStartOffset (handles RTL/LTR decoration).
+    // Previously non-pattern mode used the raw selectionStart directly, which was
+    // wrong in RTL because the LRM + suffix offset was not subtracted.
+    const rawInsertStart = this.mapDisplayCursorToRawIndex(inputEl.selectionStart ?? 0);
+    const rawInsertEnd = this.mapDisplayCursorToRawIndex(inputEl.selectionEnd ?? 0);
 
     // Insert sanitized content into the raw value at the cursor position
     const beforeCursor = this._rawValue.slice(0, rawInsertStart);
@@ -807,13 +810,13 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
   }
 
   /**
-   * Write the formatted display string back to the <input> DOM element
-   * and try to restore the cursor to a sensible position.
-   *
-   * @param cursorBefore  Cursor position in the display string BEFORE we reformatted
-   * @param lengthBefore  Total display string length BEFORE we reformatted
+   * Write the formatted display string back to the <input> DOM element.
+   * Cursor placement is left entirely to the browser — we never call
+   * setSelectionRange here. The browser naturally keeps the cursor where
+   * the user last interacted, which is the correct behaviour for both
+   * LTR and RTL inputs.
    */
-  private refreshDisplay(cursorBefore?: number, lengthBefore?: number): void {
+  private refreshDisplay(): void {
     // ── Step 1: format the number portion ─────────────────────────────────
     const formattedContent = this.hasPattern
       ? this.applyPatternFormatting(this._rawValue)
@@ -1036,15 +1039,18 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
   private enforceDecimalRules(raw: string): string {
     const parts = raw.split('.');
 
-    // More than one dot? Collapse everything after the first dot into one decimal part
+    // Always enforce: at most one decimal point
     if (parts.length > 2) {
       raw = parts[0] + '.' + parts.slice(1).join('');
     }
 
-    // Too many decimal digits? Truncate to the allowed count
-    const [intPart, decPart] = raw.split('.');
-    if (decPart !== undefined && decPart.length > this.decimalPlaces) {
-      raw = intPart + '.' + decPart.slice(0, this.decimalPlaces);
+    // Only truncate decimal digits when decimalPlaces is a finite number.
+    // When decimalPlaces is null the user may type as many decimals as they want.
+    if (this.decimalPlaces !== null) {
+      const [intPart, decPart] = raw.split('.');
+      if (decPart !== undefined && decPart.length > this.decimalPlaces) {
+        raw = intPart + '.' + decPart.slice(0, this.decimalPlaces);
+      }
     }
 
     return raw;
@@ -1093,7 +1099,7 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
     if (this.effectiveOutputType === 'string') {
       clean = clean.replace(REGEX.ONLY_DIGITS, '');         // string: digits only
     } else if (this.decimalPlaces === 0) {
-      clean = clean.replace(REGEX.ONLY_DIGITS_AND_MINUS, ''); // integer: digits + minus
+      clean = clean.replace(REGEX.ONLY_DIGITS_AND_MINUS, ''); // integer only: digits + minus
     } else {
       clean = clean.replace(REGEX.ONLY_DIGITS_DOT_AND_MINUS, ''); // decimal: digits + . + minus
     }
@@ -1128,23 +1134,56 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
    *     '0'  pos 7 → digit (raw index 4)  digit consumed → raw index 5
    *   We reached position 8, so raw index = 5  ✔
    */
+  /**
+   * Convert a DOM cursor position (selectionStart) to an index inside the
+   * raw digit string.
+   *
+   * Works correctly in both LTR and RTL:
+   *
+   *   LTR: display = [prefix][formattedNumber][suffix]
+   *        number starts at prefix.length
+   *
+   *   RTL: display = [LRM][suffix][formattedNumber][prefix]
+   *        number starts at LRM.length + suffix.length
+   *
+   *   In both cases we subtract editableStartOffset to get a position
+   *   relative to the start of the formatted number, then walk the pattern
+   *   (if any) to count how many raw digits precede that position.
+   *
+   * Non-pattern mode:
+   *   The cursor position inside the number portion equals the raw digit
+   *   index directly (no separators injected in string/integer mode, and
+   *   thousands separators shift characters but the raw index is what we
+   *   need for splice operations).
+   *
+   * Example (RTL, pattern='(000) 000-0000', prefix='﷼', suffix=''):
+   *   editableStartOffset = LRM.length (1) + suffix.length (0) = 1
+   *   displayCursorPos = 5 → positionInPattern = 5 - 1 = 4
+   *   Walk: '(' pos0, '5' pos1 (raw 1), '5' pos2 (raw 2), '5' pos3 (raw 3), ')' pos4
+   *   → rawDigitIndex = 3  ✔
+   */
   private mapDisplayCursorToRawIndex(displayCursorPos: number): number {
+    // Subtract decoration offset to get position relative to number start.
+    // editableStartOffset already accounts for LTR vs RTL layout.
+    const positionInFormattedNumber = displayCursorPos - this.editableStartOffset;
+
     if (!this.hasPattern) {
-      return displayCursorPos;
+      // No pattern: position in formatted number ≈ raw digit index
+      // (thousands separators add chars but we want the raw insert point)
+      return Math.max(0, positionInFormattedNumber);
     }
 
-    // Adjust for prefix length so we walk the pattern relative to its own start
-    const positionInPattern = displayCursorPos - this.prefix.length;
+    // Pattern mode: walk the pattern counting digit slots up to our position
     let rawDigitIndex = 0;
     let patternPosition = 0;
 
     for (const patternChar of this._resolvedPattern) {
-      if (patternPosition >= positionInPattern) {
+      if (patternPosition >= positionInFormattedNumber) {
         break;
       }
 
       if (patternChar === '0') {
-        rawDigitIndex++; // this position consumed a digit
+        rawDigitIndex++;
       }
 
       patternPosition++;
