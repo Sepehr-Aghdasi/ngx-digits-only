@@ -823,8 +823,26 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
 
     // ── Step 2: assemble the full display string ───────────────────────────
     //
-    // RTL layout:  [LRM][suffix][formattedNumber][prefix]
-    // LTR layout:  [prefix][formattedNumber][suffix]
+    // EMPTY STATE — write a true empty string when there is no number content.
+    //
+    //   WHY THIS IS CRITICAL FOR ANGULAR MATERIAL:
+    //     MatInput determines whether to float the label by checking if the
+    //     native input value is empty ('').  If we write prefix/suffix into
+    //     the DOM even when the field is logically empty (e.g. just '$' or
+    //     '\u200E﷼'), Material sees a non-empty value and floats the label
+    //     permanently — even though the user has typed nothing.
+    //
+    //     Fix: only wrap with prefix/suffix/LRM when formattedContent is
+    //     non-empty.  When empty, write '' so Material's empty check passes.
+    //
+    //   NOTE ON PREFIX/SUFFIX UX:
+    //     The prefix and suffix appear as soon as the user starts typing and
+    //     disappear when the field is cleared.  This matches how every
+    //     Angular Material currency/unit input is expected to behave.
+    //
+    // RTL layout (non-empty):  [LRM][suffix][formattedNumber][prefix]
+    // LTR layout (non-empty):  [prefix][formattedNumber][suffix]
+    // Either layout (empty):   ''
     //
     // WHY SWAP PREFIX AND SUFFIX IN RTL?
     //   In RTL reading order, the "start" of a line is the right side.
@@ -838,31 +856,15 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
     //   Prevents the bidi algorithm from treating the numeric content as RTL
     //   text and mirroring digit order or separator placement.
     //   The LRM is stripped before the value reaches the model.
-    const fullDisplayValue = this.isRtl
-      ? LRM + this.suffix + formattedContent + this.prefix
-      : this.prefix + formattedContent + this.suffix;
+    const isEmpty = formattedContent === '' || formattedContent === '-';
+
+    const fullDisplayValue = isEmpty
+      ? formattedContent                                        // '' or '-' — no decoration
+      : this.isRtl
+        ? LRM + this.suffix + formattedContent + this.prefix   // RTL non-empty
+        : this.prefix + formattedContent + this.suffix;        // LTR non-empty
 
     this.renderer.setProperty(this.el.nativeElement, 'value', fullDisplayValue);
-
-    // ── Step 3: restore cursor position ───────────────────────────────────
-    if (cursorBefore !== undefined && lengthBefore !== undefined) {
-      const lengthDelta = fullDisplayValue.length - lengthBefore;
-
-      // Clamp cursor between the editable start and end offsets,
-      // both of which account for the RTL/LTR decoration layout.
-      const newCursorPos = Math.max(
-        this.editableStartOffset,
-        Math.min(
-          cursorBefore + lengthDelta,
-          fullDisplayValue.length - this.editableEndPadding,
-        ),
-      );
-
-      // Defer to next animation frame so the browser has committed the new value
-      requestAnimationFrame(() => {
-        this.el.nativeElement.setSelectionRange(newCursorPos, newCursorPos);
-      });
-    }
   }
 
   /**
