@@ -69,7 +69,7 @@ That's it. The field now only accepts digits `0–9`. Nothing else gets through.
 
 | Input | Type | Default | What it does |
 |---|---|---|---|
-| `decimalPlaces` | `number` | `0` | How many decimal digits are allowed |
+| `decimalPlaces` | `number \| null` | `0` | Decimal places: `0` = integers, `N` = exactly N, `null` = unlimited |
 | `thousandSeparator` | `'' \| ',' \| '.' \| ' ' \| '_'` | `''` | Visual grouping character |
 | `prefix` | `string` | `''` | Text shown before the number (e.g. `$`) |
 | `suffix` | `string` | `''` | Text shown after the number (e.g. `%`) |
@@ -84,17 +84,26 @@ That's it. The field now only accepts digits `0–9`. Nothing else gets through.
 
 ## decimalPlaces
 
-Default `0` means integers only.
+Controls how many digits are allowed after the decimal point.
 
 ```html
+<!-- 0 (default) — integers only, decimal point blocked -->
 <input digitsOnly formControlName="quantity" />
 <!-- user types: 1234   model: 1234 -->
 
+<!-- N — exactly N decimal places -->
 <input digitsOnly [decimalPlaces]="2" formControlName="price" />
 <!-- user types: 99.99   model: 99.99 -->
+
+<!-- null — unlimited decimal places, only single-dot rule enforced -->
+<input digitsOnly [decimalPlaces]="null" formControlName="exchangeRate" />
+<!-- user types: 1.23456789   model: 1.23456789 -->
 ```
 
 A keystroke that would exceed the allowed decimal places is blocked outright.
+When `null`, any number of decimal digits is accepted but only one decimal point is allowed.
+
+> `null` follows the same "no limit" convention used by `maxLength`, `min`, and `max`.
 
 ## thousandSeparator
 
@@ -122,6 +131,10 @@ Also accepts `' '` (space) and `'_'` (underscore).
 ```
 
 Both are stripped before the value reaches your model.
+
+> **Angular Material note:** The label correctly floats only when there is actual numeric
+> content. An empty field always writes `""` to the native input so `MatInput`'s empty
+> check passes correctly — even when `prefix` or `suffix` is set.
 
 ## allowNegative
 
@@ -302,9 +315,9 @@ onSubmit() {
   console.log(this.form.value);
   // {
   //   cardNumber: '4111111111111111',  // string, no spaces
-  //   expiry:     '1226',               // string, no slash
+  //   expiry:     '1226',              // string, no slash
   //   cvv:        '123',
-  //   amount:     49.99                 // number
+  //   amount:     49.99                // number
   // }
 }
 ```
@@ -335,7 +348,7 @@ import { convertEasternDigits, hasEasternDigits, getDigitScript, toWesternNumber
 
 convertEasternDigits('١٢٣');   // '123'
 hasEasternDigits('١٢٣');       // true
-getDigitScript('۴۵۶');          // 'persian'
+getDigitScript('۴۵۶');         // 'persian'
 toWesternNumber('١٢٣٫٤٥');    // 123.45
 ```
 
@@ -347,6 +360,8 @@ toWesternNumber('١٢٣٫٤٥');    // 123.45
 
 **Expecting `min`/`max` with `outputType="string"`** — silently ignored in string mode; only works with `outputType="number"`.
 
+**Expecting `decimalPlaces` to work with `pattern`** — ignored when a pattern is set; patterns are always integer-only identifiers.
+
 **Forgetting `FormsModule`/`ReactiveFormsModule`** — required alongside `DigitsOnlyDirective` for `ngModel`/`formControlName` to work.
 
 ## FAQ
@@ -357,12 +372,43 @@ toWesternNumber('١٢٣٫٤٥');    // 123.45
 
 **Why `null` instead of `0` for an empty field?** By design, to distinguish "user typed zero" from "user left it blank."
 
+**Why is `decimalPlaces` typed as `number | null` now?** `null` means unlimited decimal places — same convention as `maxLength`, `min`, and `max`. `0` still means integers only and is still the default, so existing code is unaffected.
+
+**Does it work with Angular Material?** Yes — including correct label floating behaviour. The directive writes `""` to the native input when the field is empty, even when `prefix` or `suffix` is set, so `MatInput` detects the empty state correctly.
+
 **Does it work with Angular signal-based forms?** Yes — it implements `ControlValueAccessor`, compatible with any Angular form API.
 
 **Can I use it without a form?** Yes:
 ```html
 <input digitsOnly (input)="onInput($event.target.value)" />
 ```
+
+## Changelog
+
+### 1.1.0
+
+**Added**
+- `decimalPlaces` now accepts `null` for unlimited decimal places (single-dot rule still enforced). Existing `0` / `N` behavior is unchanged — no breaking change.
+
+**Fixed**
+- Angular Material (`MatInput`) label was permanently floated when `prefix` or `suffix` was set on an empty field. The directive now writes `""` to the native input when empty so Material's empty check passes correctly.
+
+### 1.0.5
+
+**Added**
+- RTL / LTR direction support — automatic via `getComputedStyle`, no extra input required
+- `convertEasternNumerals` input — Arabic-Indic and Persian digit conversion on keystroke and paste
+- `pattern` input with 11 named aliases and custom raw pattern support
+- `outputType` input — `'number'` or `'string'`
+- `NamedPattern` exported type — IDE autocomplete and compile-time safety
+- `allowNegative` now works correctly when `prefix` is set
+
+**Fixed**
+- Eastern digits (Arabic/Persian) were blocked on `keydown` because `SINGLE_DIGIT` only matches ASCII — fixed with Unicode range check
+
+### 1.0.0
+
+Initial release.
 
 ## Compatibility
 
