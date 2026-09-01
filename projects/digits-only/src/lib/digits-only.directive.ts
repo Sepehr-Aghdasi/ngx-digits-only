@@ -77,12 +77,15 @@
  */
 
 import {
+  AfterViewInit,
   Directive,
   ElementRef,
   HostListener,
   Inject,
+  Injector,
   Input,
   OnChanges,
+  OnDestroy,
   OnInit,
   Renderer2,
   SimpleChanges,
@@ -91,9 +94,11 @@ import {
 import { DOCUMENT } from '@angular/common';
 import {
   AbstractControl,
-  ControlValueAccessor,
+  FormControl,
+  FormControlDirective,
   NG_VALIDATORS,
-  NG_VALUE_ACCESSOR,
+  NgControl,
+  NgModel,
   ValidationErrors,
   Validator,
 } from '@angular/forms';
@@ -169,18 +174,13 @@ function isNamedPattern(value: string): value is NamedPattern {
   standalone: true,
   providers: [
     {
-      provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => DigitsOnlyDirective),
-      multi: true,
-    },
-    {
       provide: NG_VALIDATORS,
       useExisting: forwardRef(() => DigitsOnlyDirective),
       multi: true,
     },
   ],
 })
-export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnInit, OnChanges {
+export class DigitsOnlyDirective implements Validator, OnInit, AfterViewInit, OnChanges, OnDestroy {
 
   // ─── Public inputs ──────────────────────────────────────────────────────────
 
@@ -287,10 +287,9 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
    */
   private _rawValue = '';
 
-  // ControlValueAccessor callbacks registered by Angular forms
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _onChange: (value: any) => void = () => { };
-  private _onTouched: () => void = () => { };
+  /** Resolved lazily in ngOnInit to avoid a circular-DI error (NG0200) with FormControlDirective. */
+  private ngControl: NgControl | null = null;
+
   private _onValidatorChange: () => void = () => { };
 
   // ─── Computed properties ────────────────────────────────────────────────────
@@ -390,6 +389,7 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
   constructor(
     private el: ElementRef<HTMLInputElement>,
     private renderer: Renderer2,
+    private injector: Injector,
     @Inject(DOCUMENT) private document: Document,
   ) { }
 
@@ -400,9 +400,47 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
     // regardless of document direction.
     this.renderer.setAttribute(this.el.nativeElement, 'inputmode', 'numeric');
 
+    // Resolved lazily (not constructor-injected) to avoid a circular-DI error
+    // (NG0200) with FormControlDirective, which itself needs this directive's
+    // NG_VALIDATORS.
+    this.ngControl = this.injector.get(NgControl, null, { optional: true, self: true });
+
+    // Manually intercept the native input event in the capture phase so our
+    // handler always runs before any other value accessor's own input
+    // listener (e.g. MatAutocompleteTrigger), which would otherwise emit the
+    // raw, unsanitized value through its own callback.
+    this.el.nativeElement.addEventListener('input', this.handleInput, { capture: true });
+
     // Render the initial empty state into the input element.
     // refreshDisplay() also sets the dir attribute on first call.
     this.refreshDisplay();
+  }
+
+  ngAfterViewInit(): void {
+    // Runs after every other directive's ngOnInit on the host, so our
+    // registration lands after the other accessor's and thus always runs
+    // last for formatting.
+    if (!this.ngControl?.control) {
+      return;
+    }
+
+    (this.ngControl.control as FormControl).registerOnChange((value: unknown) => {
+      this.applyExternalValue(value);
+    });
+
+    // Sync the initial value synchronously...
+    this.applyExternalValue(this.ngControl.control.value);
+
+    // ...and once more after the entire microtask queue has drained, since
+    // some accessors defer their own initial writeValue() via a microtask
+    // (sometimes a chain of several) that would otherwise overwrite ours.
+    setTimeout(() => {
+      this.applyExternalValue(this.ngControl?.control?.value ?? null);
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.el.nativeElement.removeEventListener('input', this.handleInput, { capture: true });
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -422,15 +460,20 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
     }
   }
 
-  // ─── ControlValueAccessor ────────────────────────────────────────────────────
-  // These four methods are the bridge between the directive and Angular forms.
+  // ─── Forms bridge ────────────────────────────────────────────────────────────
+  // These bridge the directive directly to the host's NgControl, instead of
+  // registering as a ControlValueAccessor (Angular allows only one custom
+  // value accessor per form-bound element, and other directives on the same
+  // host — e.g. MatAutocompleteTrigger — may already register one).
 
-  /** Angular calls this when the form model value changes programmatically. */
-  writeValue(value: string | number | null): void {
+  /** The writeValue() equivalent: applies an externally-set control value to the display. */
+  private applyExternalValue(value: unknown): void {
     if (value === null || value === undefined || value === '') {
       this._rawValue = '';
     } else {
-      const stringValue = String(value);
+      const stringValue = this.convertEasternNumerals
+        ? convertEasternDigits(String(value))
+        : String(value);
 
       if (this.hasPattern) {
         // Strip any separators that may already be in the incoming string value
@@ -444,19 +487,24 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
     this.refreshDisplay();
   }
 
-  /** Angular calls this to register the function we must call when our value changes. */
-  registerOnChange(fn: (v: number | string | null) => void): void {
-    this._onChange = fn;
-  }
+  /** The registerOnChange() equivalent: pushes our formatted value into the control. */
+  private pushValueToControl(): void {
+    if (!this.ngControl?.control) {
+      return;
+    }
 
-  /** Angular calls this to register the function we must call when the field is touched. */
-  registerOnTouched(fn: () => void): void {
-    this._onTouched = fn;
-  }
+    const modelValue = this.buildModelValue();
 
-  /** Angular calls this to enable or disable the input. */
-  setDisabledState(isDisabled: boolean): void {
-    this.renderer.setProperty(this.el.nativeElement, 'disabled', isDisabled);
+    // emitModelToViewChange: false stops this call from re-triggering the
+    // other accessor's writeValue(), since we already rendered the DOM ourselves.
+    this.ngControl.control.setValue(modelValue, { emitModelToViewChange: false });
+
+    // Plain [(ngModel)]'s built-in DefaultValueAccessor already fired
+    // ngModelChange with the raw unsanitized value before this runs, so we
+    // need to explicitly push the sanitized value through as well.
+    if (this.ngControl instanceof NgModel || this.ngControl instanceof FormControlDirective) {
+      this.ngControl.viewToModelUpdate(modelValue);
+    }
   }
 
   // ─── Validator ───────────────────────────────────────────────────────────────
@@ -621,9 +669,14 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
    * Process input AFTER the character has landed in the input element.
    * We read the new display value, strip decorations to get raw digits,
    * apply rules (decimal limits, maxLength, leading zeros), then re-render.
+   *
+   * Registered manually (not via @HostListener) in the capture phase so we
+   * can call stopImmediatePropagation() and guarantee no other value
+   * accessor's own input listener ever sees the raw, unsanitized event.
    */
-  @HostListener('input')
-  onInput(): void {
+  private handleInput = (event: Event): void => {
+    event.stopImmediatePropagation();
+
     const inputEl = this.el.nativeElement;
 
     // Convert Eastern numerals FIRST, before anything else touches the value
@@ -668,9 +721,9 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
 
     this._rawValue = raw;
     this.refreshDisplay();
-    this._onChange(this.buildModelValue());
+    this.pushValueToControl();
     this._onValidatorChange();
-  }
+  };
 
   /**
    * When the user leaves the field, mark it as touched (triggers validation
@@ -679,7 +732,7 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
    */
   @HostListener('blur')
   onBlur(): void {
-    this._onTouched();
+    this.ngControl?.control?.markAsTouched();
 
     const hasTrailingDot =
       !this.hasPattern &&
@@ -762,7 +815,7 @@ export class DigitsOnlyDirective implements ControlValueAccessor, Validator, OnI
 
     this._rawValue = newRaw;
     this.refreshDisplay();
-    this._onChange(this.buildModelValue());
+    this.pushValueToControl();
     this._onValidatorChange();
   }
 

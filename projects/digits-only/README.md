@@ -260,7 +260,7 @@ Arabic and Persian keyboards produce different Unicode digit characters:
 | Arabic-Indic | `٠ ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩` |
 | Persian/Farsi | `۰ ۱ ۲ ۳ ۴ ۵ ۶ ۷ ۸ ۹` |
 
-By default (`convertEasternNumerals="true"`), both typing and pasting Eastern digits work transparently, with the Arabic decimal (`٫`) and thousands (`٬`) separators normalized automatically.
+By default (`convertEasternNumerals="true"`), typing, pasting, and programmatically-set values (e.g. `control.setValue(...)`) all convert Eastern digits transparently, with the Arabic decimal (`٫`) and thousands (`٬`) separators normalized automatically.
 
 ```html
 <input digitsOnly [convertEasternNumerals]="false" formControlName="code" />
@@ -374,9 +374,9 @@ toWesternNumber('١٢٣٫٤٥');    // 123.45
 
 **Why is `decimalPlaces` typed as `number | null` now?** `null` means unlimited decimal places — same convention as `maxLength`, `min`, and `max`. `0` still means integers only and is still the default, so existing code is unaffected.
 
-**Does it work with Angular Material?** Yes — including correct label floating behaviour. The directive writes `""` to the native input when the field is empty, even when `prefix` or `suffix` is set, so `MatInput` detects the empty state correctly.
+**Does it work with Angular Material?** Yes — including correct label floating behavior. The directive writes `""` to the native input when the field is empty, even when `prefix` or `suffix` is set, so `MatInput` detects the empty state correctly.
 
-**Does it work with Angular signal-based forms?** Yes — it implements `ControlValueAccessor`, compatible with any Angular form API.
+**Does it work with Angular signal-based forms?** Yes — it bridges directly to the host's `NgControl` (not via `ControlValueAccessor`), compatible with any Angular form API.
 
 **Can I use it without a form?** Yes:
 ```html
@@ -384,6 +384,14 @@ toWesternNumber('١٢٣٫٤٥');    // 123.45
 ```
 
 ## Changelog
+
+### 1.1.1
+
+**Changed**
+- No longer implements `ControlValueAccessor` / registers via `NG_VALUE_ACCESSOR`. Angular allows only one custom value accessor per form-bound element, so the directive now bridges directly to the host's `NgControl` instead — this avoids the "more than one custom value accessor matches form control" error when another directive on the same host (e.g. `MatAutocompleteTrigger` via `[matAutocomplete]`) also registers one. `[formControl]` / `[ngModel]` bindings keep working exactly as before, no template changes needed.
+
+**Fixed**
+- `[convertEasternNumerals]="false"` now also blocks conversion of values set programmatically (e.g. `control.setValue(...)`), not just typed/pasted input.
 
 ### 1.1.0
 
