@@ -19,6 +19,7 @@
  *   [prefix]                  Visual prefix shown in input (e.g. '$') — stripped from model
  *   [suffix]                  Visual suffix shown in input (e.g. '%') — stripped from model
  *   [allowNegative]           Allow a leading minus sign (default: false)
+ *   [allowZero]               Allow zero as the entire value (default: true)
  *   [leadingZeros]            Preserve leading zeros like '007' (default: false)
  *   [maxLength]               Maximum number of raw digits allowed
  *   [min]                     Minimum numeric value (validation, number mode only)
@@ -207,6 +208,9 @@ export class DigitsOnlyDirective implements Validator, OnInit, AfterViewInit, On
     /** When true, a leading minus '-' is allowed for negative numbers. */
     @Input() allowNegative = false;
 
+    /** When false, zero as the entire value (e.g. 0 or 0.0) is invalid. */
+    @Input() allowZero = true;
+
     /** When true, leading zeros (e.g. '007') are preserved in the model value. */
     @Input() leadingZeros = false;
 
@@ -339,6 +343,11 @@ export class DigitsOnlyDirective implements Validator, OnInit, AfterViewInit, On
         return this.hasPattern ? 'string' : this.outputType;
     }
 
+    /** A zero-only value is forbidden outside pattern mode when allowZero is false. */
+    private isForbiddenZero(raw: string): boolean {
+        return !this.allowZero && !this.hasPattern && raw !== '' && raw !== '-' && Number(raw) === 0;
+    }
+
     /**
      * The decimal separator character used in the DISPLAY.
      * If the thousands separator is '.' (European style), we must use ','
@@ -444,7 +453,7 @@ export class DigitsOnlyDirective implements Validator, OnInit, AfterViewInit, On
     }
 
     ngOnChanges(changes: SimpleChanges): void {
-        const { prefix, suffix, thousandSeparator, decimalPlaces, outputType, pattern } = changes;
+        const { prefix, suffix, thousandSeparator, decimalPlaces, outputType, pattern, allowZero } = changes;
 
         // Re-render whenever any display-affecting input changes
         const displayInputsChanged =
@@ -457,6 +466,10 @@ export class DigitsOnlyDirective implements Validator, OnInit, AfterViewInit, On
 
         if (displayInputsChanged) {
             this.refreshDisplay();
+        }
+
+        if (allowZero) {
+            this._onValidatorChange();
         }
     }
 
@@ -514,9 +527,13 @@ export class DigitsOnlyDirective implements Validator, OnInit, AfterViewInit, On
         const errors: ValidationErrors = {};
         const raw = this._rawValue;
 
+        if (this.isForbiddenZero(raw) || this.isForbiddenZero(String(_control.value ?? ''))) {
+            errors['zero'] = true;
+        }
+
         // Empty or partial-minus input: let [required] handle the "is it filled?" check
         if (raw === '' || raw === '-') {
-            return null;
+            return Object.keys(errors).length > 0 ? errors : null;
         }
 
         // ── Pattern mode validation ──────────────────────────────────────────────

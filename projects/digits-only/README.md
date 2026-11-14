@@ -74,6 +74,7 @@ That's it. The field now only accepts digits `0–9`. Nothing else gets through.
 | `prefix` | `string` | `''` | Text shown before the number (e.g. `$`) |
 | `suffix` | `string` | `''` | Text shown after the number (e.g. `%`) |
 | `allowNegative` | `boolean` | `false` | Allow a leading minus sign |
+| `allowZero` | `boolean` | `true` | Validate zero as an invalid entire value when `false` |
 | `leadingZeros` | `boolean` | `false` | Preserve leading zeros like `007` |
 | `maxLength` | `number \| null` | `null` | Max raw digit count |
 | `min` | `number \| null` | `null` | Minimum value (validation) |
@@ -144,6 +145,14 @@ Both are stripped before the value reaches your model.
 ```
 
 The minus sign is only valid as the first character, and works correctly even with `prefix` set.
+
+## allowZero
+
+```html
+<input digitsOnly [allowZero]="false" formControlName="quantity" />
+```
+
+Zero remains visible and in the form model, but the control has a `zero` validation error. This includes `0`, `-0`, and `0.0` in numeric or string mode. Empty values and numbers such as `0.5` remain valid. Pattern mode ignores `allowZero` because its digits represent an identifier.
 
 ## leadingZeros
 
@@ -384,6 +393,11 @@ toWesternNumber('١٢٣٫٤٥');    // 123.45
 ```
 
 ## Changelog
+
+### 1.2.0
+
+**Added**
+- `[allowZero]` input (default `true`). Set it to `false` to mark a zero-only value invalid with a `zero` validation error.
 
 ### 1.1.1
 
